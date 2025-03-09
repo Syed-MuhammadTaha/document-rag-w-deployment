@@ -6,6 +6,7 @@ from langchain.document_loaders import PyMuPDFLoader
 from langchain.embeddings import JinaEmbeddings
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.vectorstores import FAISS
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from config import Config
 
 VECTOR_DB_PATH = Config.VECTOR_DB_PATH
@@ -17,7 +18,7 @@ text_embeddings = JinaEmbeddings(
 )
 
 def split_by_headings(text):
-    """Splits text into sections under headings."""
+    """Splits text into sections under headings, then applies a recursive text splitter."""
     sections = []
     current_heading = " "
     current_content = []
@@ -37,10 +38,19 @@ def split_by_headings(text):
     if current_content:
         sections.append((current_heading, "\n".join(current_content)))
 
-    return sections
+    # Apply RecursiveCharacterTextSplitter
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+    split_sections = []
+    
+    for heading, content in sections:
+        chunks = text_splitter.split_text(content)
+        for chunk in chunks:
+            split_sections.append((heading, chunk))
+
+    return split_sections
 
 def process_and_store(file_path):
-    """Loads document, splits text by headings, and stores embeddings in FAISS."""
+    """Loads document, splits text using headings and recursive text splitter, and stores embeddings in FAISS."""
     loader = PyMuPDFLoader(file_path)
     documents = loader.load()
     
@@ -66,7 +76,7 @@ def process_and_store(file_path):
         index_to_docstore_id={},
     )
 
-    # Corrected: Zip texts and embeddings before adding
+    # Add embeddings
     text_embedding_pairs = list(zip(texts, embeddings))
     vector_store.add_embeddings(text_embedding_pairs)
 
