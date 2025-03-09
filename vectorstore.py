@@ -1,5 +1,4 @@
 import os
-import re
 import faiss
 import numpy as np
 from langchain.document_loaders import PyMuPDFLoader
@@ -17,52 +16,21 @@ text_embeddings = JinaEmbeddings(
     model_name=Config.EMBEDDING_MODEL
 )
 
-def split_by_headings(text):
-    """Splits text into sections under headings, then applies a recursive text splitter."""
-    sections = []
-    current_heading = " "
-    current_content = []
-
-    heading_pattern = re.compile(r"^(?:[A-Z][A-Z0-9 ]{2,}|[\d\.]+\s+[A-Z].*)$")
-
-    for line in text.split("\n"):
-        line = line.strip()
-        if heading_pattern.match(line):  
-            if current_content:  
-                sections.append((current_heading, "\n".join(current_content)))
-                current_content = []
-            current_heading = line  
-        else:
-            current_content.append(line)
-
-    if current_content:
-        sections.append((current_heading, "\n".join(current_content)))
-
-    # Apply RecursiveCharacterTextSplitter
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
-    split_sections = []
-    
-    for heading, content in sections:
-        chunks = text_splitter.split_text(content)
-        for chunk in chunks:
-            split_sections.append((heading, chunk))
-
-    return split_sections
-
 def process_and_store(file_path):
-    """Loads document, splits text using headings and recursive text splitter, and stores embeddings in FAISS."""
+    """Loads document, splits text using recursive text splitter, and stores embeddings in FAISS."""
     loader = PyMuPDFLoader(file_path)
     documents = loader.load()
     
     full_text = "\n".join([doc.page_content for doc in documents])
-    
-    sections = split_by_headings(full_text)
 
-    texts = [f"{heading}\n\n{content}" for heading, content in sections]
-    embeddings = text_embeddings.embed_documents(texts)
+    # Apply RecursiveCharacterTextSplitter
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+    chunks = text_splitter.split_text(full_text)
+
+    embeddings = text_embeddings.embed_documents(chunks)
 
     # Ensure embeddings match text count
-    assert len(texts) == len(embeddings), "Mismatch between texts and embeddings!"
+    assert len(chunks) == len(embeddings), "Mismatch between texts and embeddings!"
 
     # Initialize FAISS index
     embedding_dim = len(embeddings[0])  
@@ -77,7 +45,7 @@ def process_and_store(file_path):
     )
 
     # Add embeddings
-    text_embedding_pairs = list(zip(texts, embeddings))
+    text_embedding_pairs = list(zip(chunks, embeddings))
     vector_store.add_embeddings(text_embedding_pairs)
 
     # Save FAISS index
